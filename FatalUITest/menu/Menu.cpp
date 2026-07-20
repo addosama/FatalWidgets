@@ -13,25 +13,86 @@ namespace
 {
 	namespace Client
 	{
-		struct Category
+		struct FeatureSubPage
+		{
+			const char* name;
+		};
+		struct FeaturePage
+		{
+			const char* name;
+			std::vector<FeatureSubPage> subpages;
+		};
+		struct FeatureCategory
 		{
 			char8_t icon[4];
 			const char* name;
+			std::vector<FeaturePage> pages;
 		};
-		const std::vector<Category> FeatureCategories = {
-			Category(u8"\ue66f", "RAGE"),
-			Category(u8"\ue6df", "LEGIT"),
-			Category(u8"\ue620", "VISUALS"),
-			Category(u8"\ue665", "MISC")
+		const std::vector<FeatureCategory> FeatureCategories = {
+			FeatureCategory(
+				u8"\ue66f", "RAGE",
+				{
+					FeaturePage(
+						"Aimbot", 
+						{
+							FeatureSubPage("General"),
+							FeatureSubPage("Weapon1"),
+							FeatureSubPage("Weapon2")
+						}
+					),
+					FeaturePage(
+						"Anti-aim",
+						{
+							FeatureSubPage("General")
+						}
+					)
+				}
+			),
+			FeatureCategory(
+				u8"\ue6df", "LEGIT",
+				{
+					FeaturePage(
+						"LegitBot",
+						{
+							FeatureSubPage("General")
+						}
+					)
+				}
+			),
+			FeatureCategory(
+				u8"\ue620", "VISUALS",
+				{
+					FeaturePage(
+						"General",
+						{
+							FeatureSubPage("Overlay"),
+							FeatureSubPage("World")
+						}
+					)
+				}
+			),
+			FeatureCategory(
+				u8"\ue665", "MISC",
+				{
+					FeaturePage(
+						"General",
+						{
+							FeatureSubPage("General")
+						}
+					)
+				}
+			)
 		};
 	}
 
 	namespace Menu
 	{
 		bool initialized = false;
-		std::vector<Client::Category> categories;
+		std::vector<Client::FeatureCategory> categories;
 
 		int activeCateIndex = 0;
+		int activePageIndex = 0;
+		int activeSubPageIndex = 0;
 
 		void initialize()
 		{
@@ -91,7 +152,11 @@ void Fatal::Menu::draw()
 				const auto& cate = ::Menu::categories.at(i);
 				ImGui::SetCursorPosY(11);
 				if (FatalWidgets::IconButton(cate.name, reinterpret_cast<const char*>(cate.icon), cate.name, ::Menu::activeCateIndex == i, IconFont, ImVec2(0, 28)))
+				{
 					::Menu::activeCateIndex = i;
+					::Menu::activePageIndex = 0;
+					::Menu::activeSubPageIndex = 0;
+				}
 			}
 
 			// user data
@@ -168,7 +233,36 @@ void Fatal::Menu::draw()
 	{
 		ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(12, 14));
 		ImGui::BeginChild("Content", ImVec2(winRectSize.x, 508), ImGuiChildFlags_AlwaysUseWindowPadding);
+		ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(0, 6));
+		const Client::FeatureCategory& selectedCate = ::Menu::categories[::Menu::activeCateIndex];
+		if (selectedCate.pages.size() > 1)
+		{
+			ImGui::BeginGroup();
+			for (int i = 0; i < selectedCate.pages.size(); ++i)
+			{
+				const auto& page = selectedCate.pages[i];
+				if (FatalWidgets::RadioButtonB(page.name, page.name, &::Menu::activePageIndex, i))
+					::Menu::activeSubPageIndex = 0;
+				ImGui::SameLine(0, 4);
+			}
+			ImGui::EndGroup();
+		}
+		const Client::FeaturePage& selectedPage = selectedCate.pages[::Menu::activePageIndex];
+		if (selectedPage.subpages.size() > 1)
+		{
+			ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0, 8));
+			ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(0, 4));
+			ImGui::BeginChild("SubPages", ImVec2(110, ImGui::GetContentRegionAvail().y), ImGuiChildFlags_AlwaysUseWindowPadding);
+			for (int i = 0; i < selectedPage.subpages.size(); ++i)
+			{
+				const auto& subPage = selectedPage.subpages[i];
+				FatalWidgets::RadioButtonL(subPage.name, subPage.name, &::Menu::activeSubPageIndex, i);
+			}
+			ImGui::EndChild();
+			ImGui::PopStyleVar(2);
+		}
 
+		ImGui::PopStyleVar();
 		ImGui::EndChild();
 		ImGui::PopStyleVar();
 	}
