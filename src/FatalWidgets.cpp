@@ -397,7 +397,8 @@ void FatalWidgets::BeginGroup(const char* childLabel, const ImVec2& size, TextRe
     ImGui::BeginGroup();
     const auto groupPos = ImGui::GetCursorScreenPos();
     ImGui::SetCursorScreenPos(ImVec2(groupPos.x, groupPos.y));
-    ImGui::Dummy(ImVec2(0, textRenderer->GetFontHeight()));
+    const auto dummySize = ImVec2(0, textRenderer->GetFontHeight());
+    ImGui::Dummy(dummySize);
     ImGui::SetCursorScreenPos(ImVec2(groupPos.x, groupPos.y + ImGui::GetItemRectSize().y));
 
     const auto windowDraws = ImGui::GetWindowDrawList();
@@ -408,7 +409,7 @@ void FatalWidgets::BeginGroup(const char* childLabel, const ImVec2& size, TextRe
     if (size.x == 0) flags |= ImGuiChildFlags_AutoResizeX;
     if (size.y == 0) flags |= ImGuiChildFlags_AutoResizeY;
     ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(16, 8));
-    ImGui::BeginChild(childLabel, size, flags);
+    ImGui::BeginChild(childLabel, size - dummySize, flags);
     ImGui::PopStyleVar();
 }
 void FatalWidgets::EndGroup(const char* title, ImU32 backgroundColor, ImU32 borderColor, ImU32 textColor, TextRenderer* textRenderer) {

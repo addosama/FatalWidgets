@@ -13,9 +13,15 @@ namespace
 {
 	namespace Client
 	{
+		struct FeatureGroup
+		{
+			const char* name;
+			float height;
+		};
 		struct FeatureSubPage
 		{
 			const char* name;
+			std::vector<FeatureGroup> groups;
 		};
 		struct FeaturePage
 		{
@@ -35,9 +41,27 @@ namespace
 					FeaturePage(
 						"Aimbot", 
 						{
-							FeatureSubPage("General"),
-							FeatureSubPage("Weapon1"),
-							FeatureSubPage("Weapon2")
+							FeatureSubPage(
+								"General",
+								{
+									FeatureGroup("WEAPON", -1),
+									FeatureGroup("EXTRA", -1),
+									FeatureGroup("GENERAL", -1)
+								}
+							),
+							FeatureSubPage(
+								"Weapon1",
+								{
+									FeatureGroup("WEAPON", -1),
+									FeatureGroup("EXTRA", -1)
+								}
+							),
+							FeatureSubPage(
+								"Weapon2",
+								{
+									FeatureGroup("WEAPON", -1)
+								}
+							)
 						}
 					),
 					FeaturePage(
@@ -65,7 +89,14 @@ namespace
 					FeaturePage(
 						"General",
 						{
-							FeatureSubPage("Overlay"),
+							FeatureSubPage(
+								"Overlay",
+								{
+									FeatureGroup("ELEMENT A", 200),
+									FeatureGroup("ELEMENT B", 300),
+									FeatureGroup("ELEMENT C", 400)
+								}
+							),
 							FeatureSubPage("World")
 						}
 					)
@@ -233,36 +264,54 @@ void Fatal::Menu::draw()
 	{
 		ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(12, 14));
 		ImGui::BeginChild("Content", ImVec2(winRectSize.x, 508), ImGuiChildFlags_AlwaysUseWindowPadding);
-		ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(0, 6));
-		const Client::FeatureCategory& selectedCate = ::Menu::categories[::Menu::activeCateIndex];
-		if (selectedCate.pages.size() > 1)
 		{
-			ImGui::BeginGroup();
-			for (int i = 0; i < selectedCate.pages.size(); ++i)
+			const Client::FeatureCategory& selectedCate = ::Menu::categories[::Menu::activeCateIndex];
+			if (selectedCate.pages.size() > 1)
 			{
-				const auto& page = selectedCate.pages[i];
-				if (FatalWidgets::RadioButtonB(page.name, page.name, &::Menu::activePageIndex, i))
-					::Menu::activeSubPageIndex = 0;
-				ImGui::SameLine(0, 4);
+				ImGui::BeginGroup();
+				for (int i = 0; i < selectedCate.pages.size(); ++i)
+				{
+					const auto& page = selectedCate.pages[i];
+					if (FatalWidgets::RadioButtonB(page.name, page.name, &::Menu::activePageIndex, i))
+						::Menu::activeSubPageIndex = 0;
+					ImGui::SameLine(0, 4);
+				}
+				ImGui::EndGroup();
 			}
-			ImGui::EndGroup();
-		}
-		const Client::FeaturePage& selectedPage = selectedCate.pages[::Menu::activePageIndex];
-		if (selectedPage.subpages.size() > 1)
-		{
-			ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0, 8));
-			ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(0, 4));
-			ImGui::BeginChild("SubPages", ImVec2(110, ImGui::GetContentRegionAvail().y), ImGuiChildFlags_AlwaysUseWindowPadding);
-			for (int i = 0; i < selectedPage.subpages.size(); ++i)
+			const Client::FeaturePage& selectedPage = selectedCate.pages[::Menu::activePageIndex];
+			ImGui::Dummy(ImVec2(0, 6));
+			ImGui::BeginChild("Page", ImGui::GetContentRegionAvail());
 			{
-				const auto& subPage = selectedPage.subpages[i];
-				FatalWidgets::RadioButtonL(subPage.name, subPage.name, &::Menu::activeSubPageIndex, i);
+				if (selectedPage.subpages.size() > 1)
+				{
+					ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0, 8));
+					ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(0, 4));
+					ImGui::BeginChild("SubPages", ImVec2(110, ImGui::GetContentRegionAvail().y), ImGuiChildFlags_AlwaysUseWindowPadding);
+					for (int i = 0; i < selectedPage.subpages.size(); ++i)
+					{
+						const auto& subPage = selectedPage.subpages[i];
+						FatalWidgets::RadioButtonL(subPage.name, subPage.name, &::Menu::activeSubPageIndex, i);
+					}
+					ImGui::EndChild();
+					ImGui::PopStyleVar(2);
+				}
+				const Client::FeatureSubPage& selectedSubPage = selectedPage.subpages[::Menu::activeSubPageIndex];
+
+				ImGui::SameLine(0, 1);
+
+				ImGui::BeginChild("Groups", ImGui::GetContentRegionAvail());
+				const auto avail = ImGui::GetContentRegionAvail();
+				const float groupWidth = (avail.x - 28) / 3;
+				for (const auto& group : selectedSubPage.groups)
+				{
+					FatalWidgets::BeginGroup(group.name, ImVec2(groupWidth, group.height < 0 ? avail.y : group.height));
+					FatalWidgets::EndGroup(group.name);
+					ImGui::SameLine(0, 14);
+				}
+				ImGui::EndChild();
 			}
 			ImGui::EndChild();
-			ImGui::PopStyleVar(2);
 		}
-
-		ImGui::PopStyleVar();
 		ImGui::EndChild();
 		ImGui::PopStyleVar();
 	}
