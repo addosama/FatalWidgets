@@ -1,5 +1,10 @@
 #include "Menu.h"
+
+#include <any>
+
 #include "FatalWidgets.h"
+
+#include "Client.h"
 
 #include <vector>
 
@@ -11,111 +16,6 @@ extern ImFont* IconFont;
 
 namespace 
 {
-	namespace Client
-	{
-		struct FeatureGroup
-		{
-			const char* name;
-			float height;
-		};
-		struct FeatureSubPage
-		{
-			const char* name;
-			std::vector<FeatureGroup> groups;
-		};
-		struct FeaturePage
-		{
-			const char* name;
-			std::vector<FeatureSubPage> subpages;
-		};
-		struct FeatureCategory
-		{
-			char8_t icon[4];
-			const char* name;
-			std::vector<FeaturePage> pages;
-		};
-		const std::vector<FeatureCategory> FeatureCategories = {
-			FeatureCategory(
-				u8"\ue66f", "RAGE",
-				{
-					FeaturePage(
-						"Aimbot", 
-						{
-							FeatureSubPage(
-								"General",
-								{
-									FeatureGroup("WEAPON", -1),
-									FeatureGroup("EXTRA", -1),
-									FeatureGroup("GENERAL", -1)
-								}
-							),
-							FeatureSubPage(
-								"Weapon1",
-								{
-									FeatureGroup("WEAPON", -1),
-									FeatureGroup("EXTRA", -1)
-								}
-							),
-							FeatureSubPage(
-								"Weapon2",
-								{
-									FeatureGroup("WEAPON", -1)
-								}
-							)
-						}
-					),
-					FeaturePage(
-						"Anti-aim",
-						{
-							FeatureSubPage("General")
-						}
-					)
-				}
-			),
-			FeatureCategory(
-				u8"\ue6df", "LEGIT",
-				{
-					FeaturePage(
-						"LegitBot",
-						{
-							FeatureSubPage("General")
-						}
-					)
-				}
-			),
-			FeatureCategory(
-				u8"\ue620", "VISUALS",
-				{
-					FeaturePage(
-						"General",
-						{
-							FeatureSubPage(
-								"Overlay",
-								{
-									FeatureGroup("ELEMENT A", 200),
-									FeatureGroup("ELEMENT B", 300),
-									FeatureGroup("ELEMENT C", 400)
-								}
-							),
-							FeatureSubPage("World")
-						}
-					)
-				}
-			),
-			FeatureCategory(
-				u8"\ue665", "MISC",
-				{
-					FeaturePage(
-						"General",
-						{
-							FeatureSubPage("General")
-						}
-					)
-				}
-			)
-		};
-	}
-
 	namespace Menu
 	{
 		bool initialized = false;
@@ -124,6 +24,57 @@ namespace
 		int activeCateIndex = 0;
 		int activePageIndex = 0;
 		int activeSubPageIndex = 0;
+
+		struct PropConfigurerElement
+		{
+			virtual ImVec2 getSize() const = 0;
+			virtual void render(void* propIn) const = 0;
+
+			virtual ~PropConfigurerElement() = default;
+		};
+
+		struct CheckBoxElement : PropConfigurerElement
+		{
+			ImVec2 getSize() const override
+			{
+				return ImVec2 { 14, 14 };
+			}
+			void render(void* propIn) const override
+			{
+				const auto prop = static_cast<Properties::BoolProperty*>(propIn);
+				auto val = prop->get();
+				if (FatalWidgets::CheckBox("CheckBox", &val, getSize()))
+					prop->set(val);
+			}
+		};
+
+		struct SliderElement : PropConfigurerElement
+		{
+			ImVec2 getSize() const override
+			{
+				return ImVec2{ 80, 16 };
+			}
+			void render(void* propIn) const override
+			{
+				// todo
+				const auto prop = static_cast<Properties::NumberProp*>(propIn);
+				auto val = prop->get();
+				if (FatalWidgets::DoubleSlider("Slider", prop->getMin(), prop->getMax(), &val, getSize()))
+					prop->set(Properties::NumberProp::processEx(val, DBL_MIN, DBL_MAX, prop->getStep()));
+			}
+		};
+
+		CheckBoxElement CheckBoxElementImpl = CheckBoxElement{};
+		SliderElement   SliderElementImpl   = SliderElement{};
+
+		PropConfigurerElement* getPropElement(Properties::AbstractProperty* prop)
+		{
+			if (dynamic_cast<Properties::BoolProperty*>(prop))
+				return &CheckBoxElementImpl;
+			if (dynamic_cast<Properties::NumberProp*>(prop))
+				return &SliderElementImpl;
+			return nullptr;
+		}
 
 		void initialize()
 		{
@@ -302,12 +253,43 @@ void Fatal::Menu::draw()
 				ImGui::BeginChild("Groups", ImGui::GetContentRegionAvail());
 				const auto avail = ImGui::GetContentRegionAvail();
 				const float groupWidth = (avail.x - 28) / 3;
+				ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(0, 4));
 				for (const auto& group : selectedSubPage.groups)
 				{
 					FatalWidgets::BeginGroup(group.name, ImVec2(groupWidth, group.height < 0 ? avail.y : group.height));
+					// draw feature configure widgets
+					for (int i = 0; i < group.features.size(); ++i)
+					{
+						ImGui::PushID(i);
+						ImGui::BeginChild("Element", ImVec2(ImGui::GetContentRegionAvail().x, 24));
+						{
+							const auto& feature = group.features[i];
+							ImGui::SetCursorPosY((24 - ImGui::GetTextLineHeight()) / 2);
+							ImGui::Text(feature.name);
+							float cursorX = ImGui::GetWindowSize().x;
+							if (feature.prop.hasProp())
+							{
+								ImGui::SameLine();
+								auto element = ::Menu::getPropElement(feature.prop.getProp());
+								const auto eSize = element->getSize();
+								cursorX -= eSize.x;
+								ImGui::SetCursorPos(ImVec2 { cursorX, (24 - eSize.y) / 2 });
+								element->render(feature.prop.getProp());
+							}
+							if (feature.prop.hasSubProp())
+							{
+								// todo subprops
+								ImGui::SameLine();
+							}
+						}
+						ImGui::EndChild();
+						//ImGui::GetWindowDrawList()->AddRect(ImGui::GetItemRectMin(), ImGui::GetItemRectMax(), 0xFF0000FF);
+						ImGui::PopID();
+					}
 					FatalWidgets::EndGroup(group.name);
 					ImGui::SameLine(0, 14);
 				}
+				ImGui::PopStyleVar();
 				ImGui::EndChild();
 			}
 			ImGui::EndChild();

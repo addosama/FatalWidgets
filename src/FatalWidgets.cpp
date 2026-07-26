@@ -295,7 +295,7 @@ bool FatalWidgets::DoubleSlider(const char* label, double minValue, double maxVa
 bool FatalWidgets::CheckBox(const char* label, bool* value, const ImVec2& size, ImU32 backgroundColor, ImU32 arrowColor) {
     bool ret;
     if ((ret = ImGui::InvisibleButton(label, size))) {
-        *value = !*value;
+	    *value = !*value;
     }
 
     Rendering::DrawFatalCheckBox(*value, ImGui::GetItemRectMin(), size, backgroundColor, arrowColor);
