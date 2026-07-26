@@ -117,7 +117,7 @@ void Fatal::Menu::draw()
 
 			// title
 			ImGui::PushFont(ExtraBold20);
-			auto text = "FUTALITY";
+			auto text = "扶她立体";
 			FatalWidgets::Rendering::DrawFatalTitle(
 				text,
 				ImGui::GetCursorScreenPos() + ImVec2(0, (ImGui::GetContentRegionAvail().y - ImGui::GetTextLineHeight()) / 2),
