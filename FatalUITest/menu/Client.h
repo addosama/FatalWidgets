@@ -5,16 +5,11 @@
 
 namespace Client
 {
-	struct Feature
-	{
-		const char* name;
-		Properties::PropDesc prop;
-	};
 	struct FeatureGroup
 	{
 		const char* name;
 		float height;
-		std::vector<Feature> features;
+		std::vector<Properties::PropDesc> features;
 	};
 	struct FeatureSubPage
 	{
@@ -36,7 +31,30 @@ namespace Client
 	// test props
 	Properties::BoolProperty boolProp{ true };
 	Properties::BoolProperty boolProp1{ false };
-	Properties::NumberProp   numProp{ 0, 100, 1, 50 };
+	Properties::NumberProp   hitchance{ 
+		0, 1, 0.01, 0, 
+		[](double val)->std::string
+		{
+			if (val == 0)
+				return "Auto";
+			double percent = val * 100;
+			return std::vformat("{:.0f}%", std::make_format_args(percent));
+		}
+	};
+	Properties::NumberProp	 mindamage{
+		0, 120, 1, 0,
+		[](double val) -> std::string
+		{
+			if (val == 0)
+				return "Lethal";
+			if (val > 100)
+			{
+				double ex = val - 100;
+				return std::vformat("HP + {:.0f}", std::make_format_args(ex));
+			}
+			return std::vformat("{:.0f} HP", std::make_format_args(val));
+		}
+	};
 
 	const std::vector<FeatureCategory> FeatureCategories = {
 		FeatureCategory(
@@ -51,11 +69,13 @@ namespace Client
 								FeatureGroup(
 									"WEAPON", -1, 
 									{ 
-										Feature(
-											"Hit-chance", 
-											Properties::PropDesc(&boolProp, { Properties::PropDesc(&boolProp1) })
+										Properties::PropDesc(
+											"Test",
+											&boolProp,
+											{ Properties::PropDesc("Test", &boolProp1) }
 										), 
-										Feature("Pointscale", Properties::PropDesc(&numProp))
+										Properties::PropDesc("Hit-chance", &hitchance),
+										Properties::PropDesc("Min-damage", &mindamage)
 									}
 								),
 								FeatureGroup("EXTRA", -1),

@@ -59,7 +59,7 @@ namespace
 				// todo
 				const auto prop = static_cast<Properties::NumberProp*>(propIn);
 				auto val = prop->get();
-				if (FatalWidgets::DoubleSlider("Slider", prop->getMin(), prop->getMax(), &val, getSize()))
+				if (FatalWidgets::DoubleSlider("Slider", prop->getMin(), prop->getMax(), &val, getSize(), [prop](double val) { return prop->formatValue(val); }))
 					prop->set(Properties::NumberProp::processEx(val, DBL_MIN, DBL_MAX, prop->getStep()));
 			}
 		};
@@ -117,7 +117,7 @@ void Fatal::Menu::draw()
 
 			// title
 			ImGui::PushFont(ExtraBold20);
-			auto text = "扶她立体";
+			auto text = "FATALITY";
 			FatalWidgets::Rendering::DrawFatalTitle(
 				text,
 				ImGui::GetCursorScreenPos() + ImVec2(0, (ImGui::GetContentRegionAvail().y - ImGui::GetTextLineHeight()) / 2),
@@ -265,21 +265,65 @@ void Fatal::Menu::draw()
 						{
 							const auto& feature = group.features[i];
 							ImGui::SetCursorPosY((24 - ImGui::GetTextLineHeight()) / 2);
-							ImGui::Text(feature.name);
+							ImGui::Text("%s", feature.getName());
 							float cursorX = ImGui::GetWindowSize().x;
-							if (feature.prop.hasProp())
+							if (feature.hasProp())
 							{
 								ImGui::SameLine();
-								auto element = ::Menu::getPropElement(feature.prop.getProp());
+								const auto element = ::Menu::getPropElement(feature.getProp());
 								const auto eSize = element->getSize();
 								cursorX -= eSize.x;
 								ImGui::SetCursorPos(ImVec2 { cursorX, (24 - eSize.y) / 2 });
-								element->render(feature.prop.getProp());
+								cursorX -= 6;
+								element->render(feature.getProp());
 							}
-							if (feature.prop.hasSubProp())
+							if (feature.hasSubProp())
 							{
-								// todo subprops
 								ImGui::SameLine();
+								cursorX -= 16;
+								ImGui::SetCursorPos(ImVec2{ cursorX, 3.5 });
+								if (ImGui::InvisibleButton("SubPropButton", ImVec2{ 16, 16 }))
+									ImGui::OpenPopup("SubProps");
+								ImGui::PushFont(IconFont);
+								ImGui::GetWindowDrawList()->AddText(
+									ImGui::GetItemRectMin(), 0xFF666666, reinterpret_cast<const char*>(u8"\ue665")
+								);
+								ImGui::PopFont();
+								if (ImGui::IsPopupOpen("SubProps"))
+								{
+									ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(6, 0));
+									ImGui::PushStyleVar(ImGuiStyleVar_PopupRounding, 4);
+									ImGui::PushStyleColor(ImGuiCol_Border, 0xFF222222);
+									ImGui::PushStyleColor(ImGuiCol_PopupBg, 0xFF1C1C1C);
+									ImGui::SetNextWindowPos(ImGui::GetItemRectMin() + ImVec2(0, 22));
+								}
+								if (ImGui::BeginPopup("SubProps"))
+								{
+									// todo
+									// create property element for every property when initializing menu instead
+									const auto& subprops = feature.getSubProps();
+									for (int subpropIndex = 0; subpropIndex < subprops.size(); ++subpropIndex)
+									{
+										const auto& subprop = subprops[subpropIndex];
+										if (!subprop.hasProp()) continue;
+										ImGui::PushID(subpropIndex);
+										ImGui::BeginChild("Element", ImVec2(200, 24));
+										{
+											ImGui::SetCursorPosY((24 - ImGui::GetTextLineHeight()) / 2);
+											ImGui::Text("%s", subprop.getName());
+											ImGui::SameLine();
+											const auto element = ::Menu::getPropElement(subprop.getProp());
+											const auto eSize = element->getSize();
+											ImGui::SetCursorPos(ImVec2{ 200 - eSize.x, (24 - eSize.y) / 2 });
+											element->render(subprop.getProp());
+										}
+										ImGui::EndChild();
+										ImGui::PopID();
+									}
+									ImGui::EndPopup();
+									ImGui::PopStyleColor(2);
+									ImGui::PopStyleVar(2);
+								}
 							}
 						}
 						ImGui::EndChild();

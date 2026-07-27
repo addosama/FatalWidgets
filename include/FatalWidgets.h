@@ -1,5 +1,6 @@
 ﻿#pragma once
 
+#include <functional>
 #include <string>
 #include "imgui.h"
 
@@ -85,7 +86,7 @@ namespace FatalWidgets {
 	    const char* label,
 	    double minValue, double maxValue, double* value,
 	    const ImVec2& size,
-	    std::string(*toTextFn)(double) = &Utils::doubleToText,
+	    const std::function<std::string(double)>& toTextFn = &Utils::doubleToText,
 	    ImU32 highlightedColor = 0xFF6666FF, ImU32 backgroundColor = 0xFF141414,
 	    ImU32 highlightedTextColor = 0xFFFFFFFF, ImU32 textColor = 0xFF4D4D4D, ImU32 textShadowColor = 0xFF4D4D4D,
 	    TextRenderer* textRenderer = Rendering::GetDefaultTextRenderer()

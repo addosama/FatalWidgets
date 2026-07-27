@@ -1,6 +1,7 @@
 #pragma once
 #include <algorithm>
 #include <cmath>
+#include <format>
 #include <memory>
 #include <vector>
 
@@ -40,6 +41,7 @@ namespace Properties
 		double min;
 		double max;
 		double step;
+		std::function<std::string(double)> formatFn;
 	protected:
 		double processValue(double valIn) override
 		{
@@ -64,8 +66,16 @@ namespace Properties
 			return step;
 		}
 
-		NumberProp(double minIn, double maxIn, double stepIn, double defaultValue)
-			: PropBase(processEx(defaultValue, minIn, maxIn, stepIn)), min(minIn), max(maxIn), step(stepIn)
+		std::string formatValue(double val) const
+		{
+			return formatFn(val);
+		}
+
+		NumberProp(double minIn, double maxIn, double stepIn, double defaultValue, std::function<std::string(double)>&& formatFnIn)
+			: PropBase(processEx(defaultValue, minIn, maxIn, stepIn)), min(minIn), max(maxIn), step(stepIn), formatFn(std::move(formatFnIn))
+		{}
+		NumberProp(double minIn, double maxIn, double stepIn, double defaultValue, const char* formatIn = "{}")
+			: NumberProp(minIn, maxIn, stepIn, defaultValue, [formatIn](double val) { return std::vformat(formatIn, std::make_format_args(val)); })
 		{}
 	};
 
@@ -79,6 +89,7 @@ namespace Properties
 
 	class PropDesc
 	{
+		const char* name;
 		AbstractProperty* prop;
 		std::vector<PropDesc> subProps;
 	public:
@@ -102,8 +113,13 @@ namespace Properties
 			return subProps;
 		}
 
-		PropDesc(AbstractProperty* propIn, std::vector<PropDesc>&& subPropsIn = {})
-			: prop(propIn), subProps(std::move(subPropsIn))
+		const char* getName() const
+		{
+			return name;
+		}
+
+		PropDesc(const char* nameIn, AbstractProperty* propIn, std::vector<PropDesc>&& subPropsIn = {})
+			: name(nameIn), prop(propIn), subProps(std::move(subPropsIn))
 		{}
 	};
 }

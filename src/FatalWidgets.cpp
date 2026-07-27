@@ -8,6 +8,7 @@
 
 #include <string>
 #include <algorithm>
+#include <functional>
 
 #include "imgui_internal.h"
 
@@ -270,7 +271,7 @@ void Rendering::DrawIconButton(const char* icon, const char* text, bool activate
     //draws->AddRect(ImVec2(iconPos.x + iconSize.x + 4, pos.y + (size.y - textSize.y) / 2), ImVec2(iconPos.x + iconSize.x + 4, pos.y + (size.y - textSize.y) / 2) + textSize, 0xFF0000FF);
 }
 
-bool FatalWidgets::DoubleSlider(const char* label, double minValue, double maxValue, double* value, const ImVec2& size, std::string(*toTextFn)(double), ImU32 highlightedColor, ImU32 backgroundColor, ImU32 highlightedTextColor, ImU32 textColor, ImU32 textShadowColor, TextRenderer* textRenderer) {
+bool FatalWidgets::DoubleSlider(const char* label, double minValue, double maxValue, double* value, const ImVec2& size, const std::function<std::string(double)>& toTextFn, ImU32 highlightedColor, ImU32 backgroundColor, ImU32 highlightedTextColor, ImU32 textColor, ImU32 textShadowColor, TextRenderer* textRenderer) {
     ImGui::InvisibleButton(label, size, 0);
     const bool drag = ImGui::IsItemActive() && ImGui::IsMouseDragging(0);
 

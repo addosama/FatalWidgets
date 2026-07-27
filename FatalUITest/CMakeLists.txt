@@ -16,4 +16,5 @@ target_sources(
 	fatalui_test.cpp
 	imgui_impl_win32.cpp
 	imgui_impl_dx12.cpp
+	"menu/Client.h"
  "menu/Menu.cpp")
