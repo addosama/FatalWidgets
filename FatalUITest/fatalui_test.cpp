@@ -621,7 +621,7 @@ void drawFatalWidgets()
         FatalWidgets::IconButton("IconButton2", "2", "IconB2", false, ExtraBold20);
         ImGui::EndGroup();
 
-        FatalWidgets::BeginGroup("FataGroup", ImVec2(220, 220));
+        FatalWidgets::BeginGroup("FataGroup", ImVec2());
 
 
         ImGui::Text("Hello Fatal Group!");

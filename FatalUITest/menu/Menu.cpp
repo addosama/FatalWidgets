@@ -1,13 +1,8 @@
 #include "Menu.h"
 
-#include <any>
-
 #include "FatalWidgets.h"
-
 #include "Client.h"
-
 #include <vector>
-
 #include "imgui_internal.h"
 
 extern ImFont* Medium12;
@@ -56,7 +51,6 @@ namespace
 			}
 			void render(void* propIn) const override
 			{
-				// todo
 				const auto prop = static_cast<Properties::NumberProp*>(propIn);
 				auto val = prop->get();
 				if (FatalWidgets::DoubleSlider("Slider", prop->getMin(), prop->getMax(), &val, getSize(), [prop](double val) { return prop->formatValue(val); }))
@@ -64,8 +58,26 @@ namespace
 			}
 		};
 
+		struct ComboBoxElement : PropConfigurerElement
+		{
+			ImVec2 getSize() const override
+			{
+				return ImVec2{ 80, 22 };
+			}
+			void render(void* propIn) const override
+			{
+				const auto prop = static_cast<Properties::ModeProperty*>(propIn);
+				const auto valText = prop->getValueName(prop->get()).data();
+				if (FatalWidgets::ComboBox("ComboBox", "ModesPopup", valText, getSize()))
+				{
+					ImGui::EndPopup();
+				}
+			}
+		};
+
 		CheckBoxElement CheckBoxElementImpl = CheckBoxElement{};
 		SliderElement   SliderElementImpl   = SliderElement{};
+		ComboBoxElement ComboBoxElementImpl = ComboBoxElement{};
 
 		PropConfigurerElement* getPropElement(Properties::AbstractProperty* prop)
 		{
@@ -73,6 +85,8 @@ namespace
 				return &CheckBoxElementImpl;
 			if (dynamic_cast<Properties::NumberProp*>(prop))
 				return &SliderElementImpl;
+			if (dynamic_cast<Properties::ModeProperty*>(prop))
+				return &ComboBoxElementImpl;
 			return nullptr;
 		}
 
@@ -210,7 +224,6 @@ void Fatal::Menu::draw()
 			0x44000000, 0x44000000, 0, 0
 		);
 	}
-
 	// draw content
 	{
 		ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(12, 14));
@@ -228,9 +241,9 @@ void Fatal::Menu::draw()
 					ImGui::SameLine(0, 4);
 				}
 				ImGui::EndGroup();
+				ImGui::Dummy(ImVec2(0, 6));
 			}
 			const Client::FeaturePage& selectedPage = selectedCate.pages[::Menu::activePageIndex];
-			ImGui::Dummy(ImVec2(0, 6));
 			ImGui::BeginChild("Page", ImGui::GetContentRegionAvail());
 			{
 				if (selectedPage.subpages.size() > 1)

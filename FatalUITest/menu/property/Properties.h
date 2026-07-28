@@ -1,8 +1,6 @@
 #pragma once
 #include <algorithm>
-#include <cmath>
 #include <format>
-#include <memory>
 #include <vector>
 
 namespace Properties
@@ -85,6 +83,20 @@ namespace Properties
 		BoolProperty(bool defaultValue)
 			: PropBase(defaultValue)
 		{}
+	};
+
+	class ModeProperty : public PropBase<int>
+	{
+		std::vector<std::string> values;
+	public:
+		ModeProperty(const int defaultValueIndex, std::vector<std::string>&& valuesIn)
+			: PropBase(defaultValueIndex), values(std::move(valuesIn))
+		{}
+
+		std::string_view getValueName(int value) const
+		{
+			return values[value];
+		}
 	};
 
 	class PropDesc

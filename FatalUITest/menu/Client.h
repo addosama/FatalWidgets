@@ -55,6 +55,7 @@ namespace Client
 			return std::vformat("{:.0f} HP", std::make_format_args(val));
 		}
 	};
+	Properties::ModeProperty priority{ 0, { "Hit-chance", "Damage" } };
 
 	const std::vector<FeatureCategory> FeatureCategories = {
 		FeatureCategory(
@@ -75,7 +76,8 @@ namespace Client
 											{ Properties::PropDesc("Test", &boolProp1) }
 										), 
 										Properties::PropDesc("Hit-chance", &hitchance),
-										Properties::PropDesc("Min-damage", &mindamage)
+										Properties::PropDesc("Min-damage", &mindamage),
+										Properties::PropDesc("Priority", &priority)
 									}
 								),
 								FeatureGroup("EXTRA", -1),
@@ -111,7 +113,14 @@ namespace Client
 				FeaturePage(
 					"LegitBot",
 					{
-						FeatureSubPage("General")
+						FeatureSubPage(
+							"General",
+							{
+								FeatureGroup("ELEMENT A", -1),
+								FeatureGroup("ELEMENT B", -1),
+								FeatureGroup("ELEMENT C", -1)
+							}
+						)
 					}
 				)
 			}
@@ -125,8 +134,17 @@ namespace Client
 						FeatureSubPage(
 							"Overlay",
 							{
-								FeatureGroup("ELEMENT A", 200),
-								FeatureGroup("ELEMENT B", 300),
+								FeatureGroup(
+									"ELEMENT A", 0,
+									{
+										Properties::PropDesc(
+											"Test",
+											&boolProp,
+											{ Properties::PropDesc("Test", &boolProp1) }
+										), 
+									}
+								),
+								FeatureGroup("ELEMENT B", 0),
 								FeatureGroup("ELEMENT C", 400)
 							}
 						),
