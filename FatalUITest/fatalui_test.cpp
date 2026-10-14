@@ -818,11 +818,64 @@ void DrawRMB(ImDrawList* draws, ImVec2 pos, ImU32 color, float scale)
 
     draws->PathFillConcave(color);
 }
+
+void VtxColorGradient(
+	ImDrawList* dl, 
+	int begin, int end,
+	ImDrawVert lt, ImDrawVert rt,
+	ImDrawVert lb, ImDrawVert rb )
+{
+    const float width = rt.pos.x - lt.pos.x;
+    const float height = lb.pos.y - lt.pos.y;
+
+    if (width == 0.0f || height == 0.0f)
+        return;
+
+    const float invWidth = 1.0f / width;
+    const float invHeight = 1.0f / height;
+
+    const ImU32 cLT = lt.col;
+    const ImU32 cRT = rt.col;
+    const ImU32 cLB = lb.col;
+    const ImU32 cRB = rb.col;
+
+    for (int i = begin; i < end; ++i)
+    {
+        ImDrawVert& v = dl->VtxBuffer[i];
+
+        const float tx = ImClamp(
+            (v.pos.x - lt.pos.x) * invWidth, 0.0f, 1.0f);
+
+        const float ty = ImClamp(
+            (v.pos.y - lt.pos.y) * invHeight, 0.0f, 1.0f);
+
+        const ImVec4 colorLT = ImGui::ColorConvertU32ToFloat4(cLT);
+        const ImVec4 colorRT = ImGui::ColorConvertU32ToFloat4(cRT);
+        const ImVec4 colorLB = ImGui::ColorConvertU32ToFloat4(cLB);
+        const ImVec4 colorRB = ImGui::ColorConvertU32ToFloat4(cRB);
+
+        const ImVec4 top = ImLerp(colorLT, colorRT, tx);
+        const ImVec4 bottom = ImLerp(colorLB, colorRB, tx);
+        const ImVec4 color = ImLerp(top, bottom, ty);
+
+        v.col = ImGui::ColorConvertFloat4ToU32(color);
+    }
+}
+
 void drawFatalWidgets()
 {
-    const auto fDl = ImGui::GetForegroundDrawList();
-    DrawLMB(fDl, ImVec2(100, 100), 0xFF0000FF, 2);
-    DrawRMB(fDl, ImVec2(140, 100), 0xFF0000FF, 2);
+    ImGui::Begin("MouseButtonIcon", nullptr, ImGuiWindowFlags_AlwaysAutoResize);
+	{
+        auto dl = ImGui::GetWindowDrawList();
+        ImGui::Dummy(ImVec2(32, 48));
+		DrawLMB(dl, ImGui::GetItemRectMin(), 0xFF0000FF, 2);
+
+        ImGui::SameLine(0, 8);
+
+        ImGui::Dummy(ImVec2(32, 48));
+    	DrawRMB(dl, ImGui::GetItemRectMin(), 0xFF0000FF, 2);
+	}
+    ImGui::End();
 
     ImVec2 wPos, wSize;
     {
@@ -902,6 +955,34 @@ void drawFatalWidgets()
     //        wPos, wPos + wSize,
     //        wPos, wPos + ImVec2(wSize.x, wSize.y * 0.25f), wPos + ImVec2(wSize.x, wSize.y * 0.75f), wPos + ImVec2(0, wSize.y));
     //}
+
+    // gradient text test
+    {
+        ImGui::Begin("Gradient Text Render");
+        auto dl = ImGui::GetWindowDrawList();
+        std::string gradient_text = "Hello Gradient Text !!!";
+
+        auto gradient_begin = dl->VtxBuffer.Size;
+        ImGui::PushFont(ExtraBold20, 40);
+        ImGui::Text(gradient_text.c_str());
+        ImGui::PopFont();
+        auto gradient_end = dl->VtxBuffer.Size;
+        ImGui::End();
+
+        ImGui::Begin("Gradient Text Area", nullptr, ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoBackground | ImGuiWindowFlags_NoTitleBar );
+        const auto wMin = ImGui::GetWindowPos(), wMax = wMin + ImGui::GetWindowSize();
+        VtxColorGradient(
+            dl,
+            gradient_begin, gradient_end,
+            { wMin, {}, 0xFFFF0000 },
+            { { wMax.x, wMin.y }, {}, 0xFF0000FF },
+            { { wMin.x, wMax.y }, {}, 0xFFFFFF00 },
+            { wMax, {}, 0xFF00FFFF }
+        );
+        ImGui::GetWindowDrawList()->AddRect(wMin, wMax, 0xFF00FF00, 0, 2);
+        ImGui::End();
+    }
+
 }
 
 /*
