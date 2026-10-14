@@ -14,6 +14,7 @@
 #include <tchar.h>
 
 #include "font_iconfont.h"
+#include "imgui_internal.h"
 
 #ifdef _DEBUG
 #define DX12_ENABLE_DEBUG_LAYER
@@ -112,6 +113,7 @@ LRESULT WINAPI WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam);
 // declar FatalWidgets test function
 void loadFonts();
 void drawFatalWidgets();
+void shadowTest();
 
 // Main code
 int main(int, char**)
@@ -265,6 +267,8 @@ int main(int, char**)
 
         // FatalWidgets test
         drawFatalWidgets();
+
+        shadowTest();
 
         // Rendering
         ImGui::Render();
@@ -567,6 +571,133 @@ LRESULT WINAPI WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
 #include "font_medium.h"
 #include "menu/Menu.h"
 
+void TransformPoints(
+    ImDrawList* draws,
+    ImDrawIdx begin, ImDrawIdx end,
+    const ImVec2& regionMin, const ImVec2& regionMax,
+    const ImVec2& p0, const ImVec2& p1, const ImVec2& p2, const ImVec2& p3)
+{
+	if (ImMax(begin, end) > draws->VtxBuffer.size()) return;
+	for (int i = begin; i < end; ++i)
+	{
+        ImDrawVert& vert = draws->VtxBuffer[i];
+        const ImVec2& point = vert.pos;
+
+        // ------------------------------------------------------------
+		// 1. 首先判断 point 是否在原始 ImGui 区域内
+		// ------------------------------------------------------------
+
+        if (point.x < regionMin.x ||
+            point.x > regionMax.x ||
+            point.y < regionMin.y ||
+            point.y > regionMax.y)
+        {
+            // 不在区域内：完全不变换
+            continue;
+        }
+
+        // ------------------------------------------------------------
+        // 2. 原始矩形 -> UV
+        // ------------------------------------------------------------
+
+        const float width = regionMax.x - regionMin.x;
+        const float height = regionMax.y - regionMin.y;
+
+        if (std::abs(width) < 1e-6f ||
+            std::abs(height) < 1e-6f)
+        {
+            continue;
+        }
+
+        const float u =
+            (point.x - regionMin.x) / width;
+
+        const float v =
+            (point.y - regionMin.y) / height;
+
+        // ------------------------------------------------------------
+        // 3. UV -> 透视后的四边形
+        //
+        //       p0 -------- p1
+        //       |            |
+        //       |            |
+        //       p3 -------- p2
+        //
+        // 这里不能使用普通 bilinear interpolation，
+        // 而是使用 Homography。
+        // ------------------------------------------------------------
+
+        const float dx1 = p1.x - p2.x;
+        const float dx2 = p3.x - p2.x;
+        const float dx3 = p0.x - p1.x + p2.x - p3.x;
+
+        const float dy1 = p1.y - p2.y;
+        const float dy2 = p3.y - p2.y;
+        const float dy3 = p0.y - p1.y + p2.y - p3.y;
+
+        const float denominator =
+            dx1 * dy2 - dx2 * dy1;
+
+        float g = 0.0f;
+        float h = 0.0f;
+
+        if (std::abs(dx3) > 1e-6f ||
+            std::abs(dy3) > 1e-6f)
+        {
+            if (std::abs(denominator) < 1e-6f)
+            {
+                continue;
+            }
+
+            g =
+                (dx3 * dy2 - dx2 * dy3) /
+                denominator;
+
+            h =
+                (dx1 * dy3 - dx3 * dy1) /
+                denominator;
+        }
+
+        const float a =
+            p1.x - p0.x + g * p1.x;
+
+        const float b =
+            p3.x - p0.x + h * p3.x;
+
+        const float c = p0.x;
+
+        const float d =
+            p1.y - p0.y + g * p1.y;
+
+        const float e =
+            p3.y - p0.y + h * p3.y;
+
+        const float f = p0.y;
+
+        // ------------------------------------------------------------
+        // 4. 直接根据 UV 计算变换后的屏幕坐标
+        //
+        // x = (a*u + b*v + c) / (g*u + h*v + 1)
+        // y = (d*u + e*v + f) / (g*u + h*v + 1)
+        // ------------------------------------------------------------
+
+        const float denominator2 =
+            g * u + h * v + 1.0f;
+
+        if (std::abs(denominator2) < 1e-6f)
+        {
+            continue;
+        }
+
+        const ImVec2 result = {
+            (a * u + b * v + c) / denominator2,
+            (d * u + e * v + f) / denominator2
+        };
+
+        vert.pos = result;
+	}
+}
+
 ImFont* Medium12;
 ImFont* ExtraBold20;
 ImFont* IconFont;
@@ -575,15 +706,132 @@ void loadFonts() {
     ExtraBold20 = ImGui::GetIO().Fonts->AddFontFromMemoryCompressedBase85TTF(FontExtraBold_compressed_data_base85, 24);
     static constexpr ImWchar iconRange[] = { 0xE000, 0xF8FF, 0 };
     IconFont = ImGui::GetIO().Fonts->AddFontFromMemoryCompressedBase85TTF(iconfont_compressed_data_base85, 16, 0, &iconRange[0]);
+    ImGui::GetIO().IniFilename = nullptr;
 }
+void DrawLMB(ImDrawList* draws, ImVec2 pos, ImU32 color, float scale)
+{
+    auto P = [&](float x, float y) -> ImVec2
+        {
+            return ImVec2(
+                pos.x + x * scale,
+                pos.y + y * scale
+            );
+        };
 
+    draws->PathClear();
+
+    // M 0,10.666668
+    draws->PathLineTo(P(0.0f, 10.666668f));
+
+    // C 0,4.77563 4.0933971,0 9.1428576,0
+    draws->PathBezierCubicCurveTo(
+        P(0.0f, 4.77563f),
+        P(4.0933971f, 0.0f),
+        P(9.1428576f, 0.0f)
+    );
+
+    draws->PathLineTo(P(13.714286f, 0.0f));
+    draws->PathLineTo(P(16.0f, 0.0f));
+    draws->PathLineTo(P(16.0f, 2.666667f));
+    draws->PathLineTo(P(16.0f, 5.0f));
+
+    draws->PathLineTo(P(14.0f, 5.0f));
+    draws->PathLineTo(P(14.0f, 19.0f));
+    draws->PathLineTo(P(16.0f, 19.0f));
+
+    draws->PathLineTo(P(16.0f, 21.333334f));
+    draws->PathLineTo(P(16.0f, 24.0f));
+
+    draws->PathLineTo(P(13.714286f, 24.0f));
+    draws->PathLineTo(P(2.2857144f, 24.0f));
+
+    // C 1.0233493,24 0,22.806095 0,21.333334
+    draws->PathBezierCubicCurveTo(
+        P(1.0233493f, 24.0f),
+        P(0.0f, 22.806095f),
+        P(0.0f, 21.333334f)
+    );
+
+    draws->PathLineTo(P(0.0f, 10.666668f));
+
+    draws->PathFillConcave(color);
+}
+void DrawRMB(ImDrawList* draws, ImVec2 pos, ImU32 color, float scale)
+{
+    auto P = [&](float x, float y) -> ImVec2
+        {
+            return ImVec2(
+                pos.x + (16 - x) * scale,
+                pos.y + y * scale
+            );
+        };
+
+    draws->PathClear();
+
+    // Start at A = (0, 10.666668)
+
+    // Reverse of the closing line:
+    // D -> A
+    draws->PathLineTo(P(0.0f, 21.333334f));
+
+    // Reverse Bézier:
+    // D -> C
+    //
+    // Original:
+    // C -> C1 -> C2 -> D
+    //
+    // Reverse:
+    // D -> C2 -> C1 -> C
+    draws->PathBezierCubicCurveTo(
+        P(0.0f, 22.806095f),     // original C2
+        P(1.0233493f, 24.0f),    // original C1
+        P(2.2857144f, 24.0f)     // original start
+    );
+
+    // Reverse straight segments
+    draws->PathLineTo(P(13.714286f, 24.0f));
+    draws->PathLineTo(P(16.0f, 24.0f));
+    draws->PathLineTo(P(16.0f, 21.333334f));
+    draws->PathLineTo(P(16.0f, 19.0f));
+
+    draws->PathLineTo(P(14.0f, 19.0f));
+    draws->PathLineTo(P(14.0f, 5.0f));
+    draws->PathLineTo(P(16.0f, 5.0f));
+
+    draws->PathLineTo(P(16.0f, 2.666667f));
+    draws->PathLineTo(P(16.0f, 0.0f));
+    draws->PathLineTo(P(13.714286f, 0.0f));
+    draws->PathLineTo(P(9.1428576f, 0.0f));
+
+    // Reverse the upper Bézier:
+    //
+    // Original:
+    // A -> C1 -> C2 -> B
+    //
+    // Reverse:
+    // B -> C2 -> C1 -> A
+    draws->PathBezierCubicCurveTo(
+        P(4.0933971f, 0.0f),      // original C2
+        P(0.0f, 4.77563f),       // original C1
+        P(0.0f, 10.666668f)      // original start
+    );
+
+    draws->PathFillConcave(color);
+}
 void drawFatalWidgets()
 {
+    const auto fDl = ImGui::GetForegroundDrawList();
+    DrawLMB(fDl, ImVec2(100, 100), 0xFF0000FF, 2);
+    DrawRMB(fDl, ImVec2(140, 100), 0xFF0000FF, 2);
+
+    ImVec2 wPos, wSize;
     {
         static float f = 0.0f;
         static int counter = 0;
 
         ImGui::Begin("FatalWidgets test", nullptr, ImGuiWindowFlags_NoBackground);
+        wPos = ImGui::GetWindowPos();
+        wSize = ImGui::GetWindowSize();
 
         ImGui::PushFont(ExtraBold20);
         float animation = fmodf(ImGui::GetTime(), 1.0f);
@@ -645,4 +893,391 @@ void drawFatalWidgets()
 
         ImGui::End();
     }
+
+    //for (auto list : ImGui::GetDrawListSharedData()->DrawLists)
+    //{
+    //    TransformPoints(
+    //        list,
+    //        0, list->VtxBuffer.size(),
+    //        wPos, wPos + wSize,
+    //        wPos, wPos + ImVec2(wSize.x, wSize.y * 0.25f), wPos + ImVec2(wSize.x, wSize.y * 0.75f), wPos + ImVec2(0, wSize.y));
+    //}
+}
+
+/*
+ *  from https://github.com/Pagghiu/imgui/tree/2017-09-box-shadow
+ */
+ //The MIT License (MIT)
+ //
+ //Copyright (c) 2017 Stefano Cristiano
+ //
+ //Permission is hereby granted, free of charge, to any person obtaining a copy
+ //of this software and associated documentation files (the "Software"), to deal
+ //in the Software without restriction, including without limitation the rights
+ //to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+ //copies of the Software, and to permit persons to whom the Software is
+ //furnished to do so, subject to the following conditions:
+ //
+ //The above copyright notice and this permission notice shall be included in all
+ //copies or substantial portions of the Software.
+ //
+ //THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+ //IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+ //FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+ //AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+ //LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+ //OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+ //SOFTWARE.
+
+ // ---------------------------------------------------------------------------
+ // Box Shadow for imgui using vertex colors
+ // Current Limitations:
+ // - Only works for axis aligned non rounded rectangle
+ // - Not optimized at all
+ // - User needs to figure out how many slices / rings are needed and what 
+ //   spacing would look good for a box of given size and shadow sigma.
+ //	 Ideally the parameters should be automatically calculated based on some
+ //   high, medium, low quality settings
+ // ---------------------------------------------------------------------------
+
+ImVec4 operator+(float val, ImVec4 p2) { return ImVec4(val + p2.x, val + p2.y, val + p2.z, val + p2.w); }
+
+ImVec4 boxGaussianIntegral(ImVec4 x)
+{
+    const ImVec4 s = ImVec4(x.x > 0 ? 1.0f : -1.0f, x.y > 0 ? 1.0f : -1.0f, x.z > 0 ? 1.0f : -1.0f, x.w > 0 ? 1.0f : -1.0f);
+    const ImVec4 a = ImVec4(fabsf(x.x), fabsf(x.y), fabsf(x.z), fabsf(x.w));
+    const ImVec4 res = 1.0f + (0.278393f + (0.230389f + 0.078108f * (a * a)) * a) * a;
+    const ImVec4 resSquared = res * res;
+    return s - s / (resSquared * resSquared);
+}
+
+ImVec4 boxLinearInterpolation(ImVec4 x)
+{
+    const float maxClamp = 1.0f;
+    const float minClamp = -1.0f;
+    return ImVec4(x.x > maxClamp ? maxClamp : x.x < minClamp ? minClamp : x.x,
+        x.y > maxClamp ? maxClamp : x.y < minClamp ? minClamp : x.y,
+        x.z > maxClamp ? maxClamp : x.z < minClamp ? minClamp : x.z,
+        x.w > maxClamp ? maxClamp : x.w < minClamp ? minClamp : x.w);
+}
+
+float boxShadow(ImVec2 lower, ImVec2 upper, ImVec2 point, float sigma, bool linearInterpolation)
+{
+    const ImVec2 pointLower = point - lower;
+    const ImVec2 pointUpper = point - upper;
+    const ImVec4 query = ImVec4(pointLower.x, pointLower.y, pointUpper.x, pointUpper.y);
+    const ImVec4 pointToSample = query * (sqrtf(0.5f) / sigma);
+    const ImVec4 integral = linearInterpolation ? 0.5f + 0.5f * boxLinearInterpolation(pointToSample) : 0.5f + 0.5f * boxGaussianIntegral(pointToSample);
+    return (integral.z - integral.x) * (integral.w - integral.y);
+}
+
+struct RectangleShadowSettings
+{
+    // Inputs
+    bool    linear = false;
+    float   sigma = 3;
+    ImVec2  padding = ImVec2(50, 50);
+    ImVec2  rectPos = ImVec2(50, 50);
+    ImVec2  rectSize = ImVec2(120, 120);
+    ImVec2  shadowOffset = ImVec2(0, 0);
+    ImVec2  shadowSize = ImVec2(120, 50);
+    ImColor shadowColor = ImColor(0.6f, 0.6f, 0.6f, 1.0f);
+
+    int  rings = 3;
+    int  spacingBetweenRings = 6;
+    int  samplesPerCornerSide = 1;
+    int  spacingBetweenSamples = 15;
+
+    // Outputs
+    int totalVertices = 0;
+    int totalIndices = 0;
+
+    // Visualization
+    bool enableDebugVisualization = false;
+
+};
+
+void drawRectangleShadowVerticesAdaptive(RectangleShadowSettings& settings)
+{
+    const int    samplesSpan = settings.samplesPerCornerSide * settings.spacingBetweenSamples;
+    const int    halfWidth = static_cast<int>(settings.rectSize.x / 2);
+    const int    numSamplesInHalfWidth = (halfWidth / settings.spacingBetweenSamples) == 0 ? 1 : halfWidth / settings.spacingBetweenSamples;
+    const int    numSamplesWidth = samplesSpan > halfWidth ? numSamplesInHalfWidth : settings.samplesPerCornerSide;
+    const int    halfHeight = static_cast<int>(settings.rectSize.y / 2);
+    const int    numSamplesInHalfHeight = (halfHeight / settings.spacingBetweenSamples) == 0 ? 1 : halfHeight / settings.spacingBetweenSamples;
+    const int    numSamplesHeight = samplesSpan > halfHeight ? numSamplesInHalfHeight : settings.samplesPerCornerSide;
+    const int    numVerticesInARing = numSamplesWidth * 4 + numSamplesHeight * 4 + 4;
+    const ImVec2 whiteTexelUV = ImGui::GetIO().Fonts->TexUvWhitePixel;
+    const ImVec2 origin = ImGui::GetCursorScreenPos();
+    const ImVec2 rectangleTopLeft = origin + settings.rectPos;
+    const ImVec2 rectangleBottomRight = rectangleTopLeft + settings.rectSize;
+    const ImVec2 rectangleTopRight = rectangleTopLeft + ImVec2(settings.rectSize.x, 0);
+    const ImVec2 rectangleBottomLeft = rectangleTopLeft + ImVec2(0, settings.rectSize.y);
+
+    ImColor shadowColor = settings.shadowColor;
+    settings.totalVertices = numVerticesInARing * settings.rings;
+    settings.totalIndices = 6 * (numVerticesInARing) * (settings.rings - 1);
+
+    ImDrawList* drawList = ImGui::GetForegroundDrawList();
+    drawList->PrimReserve(settings.totalIndices, settings.totalVertices);
+    const ImDrawVert* shadowVertices = drawList->_VtxWritePtr;
+    ImDrawVert* vertexPointer = drawList->_VtxWritePtr;
+
+    for (int r = 0; r < settings.rings; ++r)
+    {
+        const float  adaptiveScale = (r / 2.5f) + 1;
+        const ImVec2 ringOffset = ImVec2(adaptiveScale * r * settings.spacingBetweenRings, adaptiveScale * r * settings.spacingBetweenRings);
+        for (int j = 0; j < 4; ++j)
+        {
+            ImVec2      corner;
+            ImVec2      direction[2];
+            const float spacingBetweenSamplesOnARing = static_cast<float>(settings.spacingBetweenSamples);
+            switch (j)
+            {
+            case 0:
+                corner = rectangleTopLeft + ImVec2(-ringOffset.x, -ringOffset.y);
+                direction[0] = ImVec2(1, 0) * spacingBetweenSamplesOnARing;
+                direction[1] = ImVec2(0, 1) * spacingBetweenSamplesOnARing;
+                for (int i = 0; i < numSamplesWidth; ++i)
+                {
+                    const ImVec2 point = corner + direction[0] * (numSamplesWidth - i);
+                    shadowColor.Value.w = boxShadow(rectangleTopLeft, rectangleBottomRight, point - settings.shadowOffset, settings.sigma, settings.linear);
+                    vertexPointer->pos = point;
+                    vertexPointer->uv = whiteTexelUV;
+                    vertexPointer->col = shadowColor;
+                    vertexPointer++;
+                }
+
+                shadowColor.Value.w = boxShadow(rectangleTopLeft, rectangleBottomRight, corner - settings.shadowOffset, settings.sigma, settings.linear);
+                vertexPointer->pos = corner;
+                vertexPointer->uv = whiteTexelUV;
+                vertexPointer->col = shadowColor;
+                vertexPointer++;
+
+                for (int i = 0; i < numSamplesHeight; ++i)
+                {
+                    const ImVec2 point = corner + direction[1] * (i + 1);
+                    shadowColor.Value.w = boxShadow(rectangleTopLeft, rectangleBottomRight, point - settings.shadowOffset, settings.sigma, settings.linear);
+                    vertexPointer->pos = point;
+                    vertexPointer->uv = whiteTexelUV;
+                    vertexPointer->col = shadowColor;
+                    vertexPointer++;
+                }
+                break;
+            case 1:
+                corner = rectangleBottomLeft + ImVec2(-ringOffset.x, +ringOffset.y);
+                direction[0] = ImVec2(1, 0) * spacingBetweenSamplesOnARing;
+                direction[1] = ImVec2(0, -1) * spacingBetweenSamplesOnARing;
+                for (int i = 0; i < numSamplesHeight; ++i)
+                {
+                    const ImVec2 point = corner + direction[1] * (numSamplesHeight - i);
+                    shadowColor.Value.w = boxShadow(rectangleTopLeft, rectangleBottomRight, point - settings.shadowOffset, settings.sigma, settings.linear);
+                    vertexPointer->pos = point;
+                    vertexPointer->uv = whiteTexelUV;
+                    vertexPointer->col = shadowColor;
+                    vertexPointer++;
+                }
+
+                shadowColor.Value.w = boxShadow(rectangleTopLeft, rectangleBottomRight, corner - settings.shadowOffset, settings.sigma, settings.linear);
+                vertexPointer->pos = corner;
+                vertexPointer->uv = whiteTexelUV;
+                vertexPointer->col = shadowColor;
+                vertexPointer++;
+
+                for (int i = 0; i < numSamplesWidth; ++i)
+                {
+                    const ImVec2 point = corner + direction[0] * (i + 1);
+                    shadowColor.Value.w = boxShadow(rectangleTopLeft, rectangleBottomRight, point - settings.shadowOffset, settings.sigma, settings.linear);
+                    vertexPointer->pos = point;
+                    vertexPointer->uv = whiteTexelUV;
+                    vertexPointer->col = shadowColor;
+                    vertexPointer++;
+                }
+                break;
+            case 2:
+                corner = rectangleBottomRight + ImVec2(+ringOffset.x, +ringOffset.y);
+                direction[0] = ImVec2(-1, 0) * spacingBetweenSamplesOnARing;
+                direction[1] = ImVec2(0, -1) * spacingBetweenSamplesOnARing;
+                for (int i = 0; i < numSamplesWidth; ++i)
+                {
+                    const ImVec2 point = corner + direction[0] * (numSamplesWidth - i);
+                    shadowColor.Value.w = boxShadow(rectangleTopLeft, rectangleBottomRight, point - settings.shadowOffset, settings.sigma, settings.linear);
+                    vertexPointer->pos = point;
+                    vertexPointer->uv = whiteTexelUV;
+                    vertexPointer->col = shadowColor;
+                    vertexPointer++;
+                }
+
+                shadowColor.Value.w = boxShadow(rectangleTopLeft, rectangleBottomRight, corner - settings.shadowOffset, settings.sigma, settings.linear);
+                vertexPointer->pos = corner;
+                vertexPointer->uv = whiteTexelUV;
+                vertexPointer->col = shadowColor;
+                vertexPointer++;
+
+                for (int i = 0; i < numSamplesHeight; ++i)
+                {
+                    const ImVec2 point = corner + direction[1] * (i + 1);
+                    shadowColor.Value.w = boxShadow(rectangleTopLeft, rectangleBottomRight, point - settings.shadowOffset, settings.sigma, settings.linear);
+                    vertexPointer->pos = point;
+                    vertexPointer->uv = whiteTexelUV;
+                    vertexPointer->col = shadowColor;
+                    vertexPointer++;
+                }
+                break;
+            case 3:
+                corner = rectangleTopRight + ImVec2(+ringOffset.x, -ringOffset.y);
+                direction[0] = ImVec2(-1, 0) * spacingBetweenSamplesOnARing;
+                direction[1] = ImVec2(0, 1) * spacingBetweenSamplesOnARing;
+                for (int i = 0; i < numSamplesHeight; ++i)
+                {
+                    const ImVec2 point = corner + direction[1] * (numSamplesHeight - i);
+                    shadowColor.Value.w = boxShadow(rectangleTopLeft, rectangleBottomRight, point - settings.shadowOffset, settings.sigma, settings.linear);
+                    vertexPointer->pos = point;
+                    vertexPointer->uv = whiteTexelUV;
+                    vertexPointer->col = shadowColor;
+                    vertexPointer++;
+                }
+
+                shadowColor.Value.w = boxShadow(rectangleTopLeft, rectangleBottomRight, corner - settings.shadowOffset, settings.sigma, settings.linear);
+                vertexPointer->pos = corner;
+                vertexPointer->uv = whiteTexelUV;
+                vertexPointer->col = shadowColor;
+                vertexPointer++;
+
+                for (int i = 0; i < numSamplesWidth; ++i)
+                {
+                    const ImVec2 point = corner + direction[0] * (i + 1);
+                    shadowColor.Value.w = boxShadow(rectangleTopLeft, rectangleBottomRight, point - settings.shadowOffset, settings.sigma, settings.linear);
+                    vertexPointer->pos = point;
+                    vertexPointer->uv = whiteTexelUV;
+                    vertexPointer->col = shadowColor;
+                    vertexPointer++;
+                }
+                break;
+            }
+        }
+    }
+
+    ImDrawIdx idx = (ImDrawIdx)drawList->_VtxCurrentIdx;
+
+    for (int r = 0; r < settings.rings - 1; ++r)
+    {
+        const ImDrawIdx startOfRingIndex = idx;
+        for (int i = 0; i < numVerticesInARing - 1; ++i)
+        {
+            drawList->_IdxWritePtr[0] = idx + 0;
+            drawList->_IdxWritePtr[1] = idx + 1;
+            drawList->_IdxWritePtr[2] = idx + numVerticesInARing;
+            drawList->_IdxWritePtr[3] = idx + 1;
+            drawList->_IdxWritePtr[4] = idx + numVerticesInARing + 1;
+            drawList->_IdxWritePtr[5] = idx + numVerticesInARing;
+
+            idx += 1;
+            drawList->_IdxWritePtr += 6;
+        }
+
+        drawList->_IdxWritePtr[0] = idx + 0;
+        drawList->_IdxWritePtr[1] = startOfRingIndex + 0;
+        drawList->_IdxWritePtr[2] = startOfRingIndex + numVerticesInARing;
+        drawList->_IdxWritePtr[3] = idx + 0;
+        drawList->_IdxWritePtr[4] = startOfRingIndex + numVerticesInARing;
+        drawList->_IdxWritePtr[5] = idx + numVerticesInARing;
+
+        drawList->_IdxWritePtr += 6;
+        idx += 1;
+    }
+    drawList->_VtxCurrentIdx += settings.totalVertices;
+    drawList->_VtxWritePtr = vertexPointer;
+    if (settings.enableDebugVisualization)
+    {
+        const ImColor lineColor(0, 0, 255, 50);
+        for (int r = 0; r < settings.rings - 1; ++r)
+        {
+            const ImDrawIdx startOfRingIndex = r * numVerticesInARing;
+
+            ImVec2 a;
+            ImVec2 b;
+            for (int i = 0; i < numVerticesInARing - 1; ++i)
+            {
+                a = shadowVertices[startOfRingIndex + i + 1].pos;
+                b = shadowVertices[startOfRingIndex + i + numVerticesInARing].pos;
+                drawList->AddLine(a, b, lineColor);
+                a = shadowVertices[startOfRingIndex + i + 0].pos;
+                b = shadowVertices[startOfRingIndex + i + numVerticesInARing].pos;
+                drawList->AddLine(a, b, lineColor);
+                a = shadowVertices[startOfRingIndex + i + numVerticesInARing + 1].pos;
+                b = shadowVertices[startOfRingIndex + i + numVerticesInARing].pos;
+                drawList->AddLine(a, b, lineColor);
+            }
+
+            a = shadowVertices[startOfRingIndex + numVerticesInARing - 1].pos;
+            b = shadowVertices[startOfRingIndex + numVerticesInARing].pos;
+            drawList->AddLine(a, b, lineColor);
+            a = shadowVertices[startOfRingIndex + numVerticesInARing + numVerticesInARing - 1].pos;
+            b = shadowVertices[startOfRingIndex + numVerticesInARing].pos;
+            drawList->AddLine(a, b, lineColor);
+        }
+
+        for (int i = 0; i < settings.totalVertices; ++i)
+        {
+            const ImVec2 bmin = shadowVertices[i].pos - ImVec2(2, 2);
+            const ImVec2 bmax = shadowVertices[i].pos + ImVec2(2, 2);
+            drawList->AddRectFilled(bmin, bmax, ImColor(255, 0, 0, 50));
+        }
+    }
+}
+RectangleShadowSettings shadowSettings;
+
+void drawShadowTestExampleWindow()
+{
+    ImGui::SetNextWindowSize(ImVec2(400, 800), ImGuiCond_Once);
+    ImGui::Begin("Test Shadows");
+    static bool showRectangles = true;
+    static bool calculateMinimumPadding = false;
+    static ImColor backgroundColor(255, 255, 255, 255);
+    static ImColor rectangleColor(240, 240, 240, 255);
+    ImGui::Checkbox("Wireframe", &shadowSettings.enableDebugVisualization);
+    ImGui::Checkbox("Draw Rectangle", &showRectangles);
+    ImGui::Checkbox("Recalculate Padding", &calculateMinimumPadding);
+    ImGui::Checkbox("Linear Falloff", &shadowSettings.linear);
+    ImGui::SliderFloat2("Rectangle Size", &shadowSettings.rectSize.x, 10, 256);
+    ImGui::SliderFloat("Shadow Sigma", &shadowSettings.sigma, 0, 50);
+    ImGui::SliderFloat2("Shadow Offset", &shadowSettings.shadowOffset.x, -10, 10);
+    ImGui::SliderInt("Rings number", &shadowSettings.rings, 1, 10);
+    ImGui::SliderInt("Rings spacing", &shadowSettings.spacingBetweenRings, 1, 20);
+    ImGui::SliderInt("Corner samples", &shadowSettings.samplesPerCornerSide, 1, 20);
+    ImGui::SliderInt("Corner spacing", &shadowSettings.spacingBetweenSamples, 1, 20);
+    ImGui::ColorPicker3("Shadow Color", &shadowSettings.shadowColor.Value.x, ImGuiColorEditFlags_PickerHueWheel);
+    ImGui::ColorPicker3("Rectangle Color", &rectangleColor.Value.x, ImGuiColorEditFlags_PickerHueWheel);
+    ImGui::ColorPicker3("Background Color", &backgroundColor.Value.x, ImGuiColorEditFlags_PickerHueWheel);
+    ImGui::End();
+
+    if (calculateMinimumPadding)
+    {
+        shadowSettings.padding = ImVec2(3 * shadowSettings.sigma, 3 * shadowSettings.sigma);
+    }
+    shadowSettings.rectPos = shadowSettings.padding;
+    shadowSettings.shadowSize = shadowSettings.rectSize + shadowSettings.padding * 2;
+
+    ImGui::SetNextWindowPos(ImVec2(700, 0), ImGuiCond_Once);
+    ImGui::Begin("Shadow Outputs");
+    ImGui::PushStyleColor(ImGuiCol_ChildBg, (ImU32)backgroundColor);
+    ImGui::Text("rings:%d, spacingH:%d, spacingR:%d\ntotalVertices:%d totalIndices:%d", shadowSettings.rings, shadowSettings.spacingBetweenRings, shadowSettings.spacingBetweenSamples, shadowSettings.totalVertices, shadowSettings.totalIndices);
+    if (ImGui::BeginChild("Adaptive Rectangle Shadow", shadowSettings.shadowSize))
+    {
+        drawRectangleShadowVerticesAdaptive(shadowSettings);
+        ImDrawList* drawList = ImGui::GetWindowDrawList();
+        const ImVec2 origin(ImGui::GetCursorScreenPos());
+        if (showRectangles)
+            drawList->AddRectFilled(origin + shadowSettings.rectPos, origin + shadowSettings.rectPos + shadowSettings.rectSize, rectangleColor);
+        drawList->AddRect(origin, origin + shadowSettings.shadowSize, ImColor(255, 0, 0, 255));
+    }
+    ImGui::EndChild();
+    ImGui::PopStyleColor();
+    ImGui::End();
+}
+
+void shadowTest()
+{
+    drawShadowTestExampleWindow();
 }

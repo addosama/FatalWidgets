@@ -157,9 +157,24 @@ namespace Client
 			u8"\ue665", "MISC",
 			{
 				FeaturePage(
-					"General",
+					"Page 1",
 					{
-						FeatureSubPage("General")
+						FeatureSubPage(
+							"General",
+							{
+								FeatureGroup("ELEMENT A", -1),
+								FeatureGroup("ELEMENT B", -1),
+								FeatureGroup("ELEMENT C", -1)
+							}
+						)
+					}
+				),
+				FeaturePage(
+					"Page 2",
+					{
+						FeatureSubPage(
+							"General"
+						)
 					}
 				)
 			}
