@@ -20,4 +20,7 @@ target_sources(
 	imstb_rectpack.h
 	imstb_textedit.h
 	imstb_truetype.h
+
+	im_anim.cpp
+	im_anim.h
 )

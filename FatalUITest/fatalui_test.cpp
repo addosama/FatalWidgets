@@ -11,9 +11,13 @@
 #include "imgui_impl_dx12.h"
 #include <d3d12.h>
 #include <dxgi1_5.h>
+#include <iostream>
+#include <math.h>
 #include <tchar.h>
 
 #include "font_iconfont.h"
+#include "imgui_internal.h"
+#include "im_anim.h"
 
 #ifdef _DEBUG
 #define DX12_ENABLE_DEBUG_LAYER
@@ -225,6 +229,7 @@ int main(int, char**)
         ImGui_ImplDX12_NewFrame();
         ImGui_ImplWin32_NewFrame();
         ImGui::NewFrame();
+        iam_update_begin_frame();
 
         // 1. Show the big demo window (Most of the sample code is in ImGui::ShowDemoWindow()! You can browse its code to learn more about Dear ImGui!).
         if (show_demo_window)
@@ -577,6 +582,204 @@ void loadFonts() {
     IconFont = ImGui::GetIO().Fonts->AddFontFromMemoryCompressedBase85TTF(iconfont_compressed_data_base85, 16, 0, &iconRange[0]);
 }
 
+#include <cmath>
+
+void VtxColorGradient(
+    ImDrawList* dl,
+    int begin, int end,
+    ImDrawVert lt, ImDrawVert rt,
+    ImDrawVert lb, ImDrawVert rb,
+    bool re_alpha = false)
+{
+    const float width = rt.pos.x - lt.pos.x;
+    const float height = lb.pos.y - lt.pos.y;
+
+    if (width == 0.0f || height == 0.0f)
+        return;
+
+    const float invWidth = 1.0f / width;
+    const float invHeight = 1.0f / height;
+
+    const ImU32 cLT = lt.col;
+    const ImU32 cRT = rt.col;
+    const ImU32 cLB = lb.col;
+    const ImU32 cRB = rb.col;
+
+    for (int i = begin; i < end; ++i)
+    {
+        ImDrawVert& v = dl->VtxBuffer[i];
+
+        const float tx = ImClamp(
+            (v.pos.x - lt.pos.x) * invWidth, 0.0f, 1.0f);
+
+        const float ty = ImClamp(
+            (v.pos.y - lt.pos.y) * invHeight, 0.0f, 1.0f);
+
+        const ImVec4 colorLT = ImGui::ColorConvertU32ToFloat4(cLT);
+        const ImVec4 colorRT = ImGui::ColorConvertU32ToFloat4(cRT);
+        const ImVec4 colorLB = ImGui::ColorConvertU32ToFloat4(cLB);
+        const ImVec4 colorRB = ImGui::ColorConvertU32ToFloat4(cRB);
+
+        const ImVec4 top = ImLerp(colorLT, colorRT, tx);
+        const ImVec4 bottom = ImLerp(colorLB, colorRB, tx);
+        const ImVec4 color = ImLerp(top, bottom, ty);
+
+        if (re_alpha)
+            v.col = ImGui::ColorConvertFloat4ToU32(color);
+        else
+        {
+            ImU32 out;
+            out  = ((ImU32)IM_F32_TO_INT8_SAT(color.x)) << IM_COL32_R_SHIFT;
+            out |= ((ImU32)IM_F32_TO_INT8_SAT(color.y)) << IM_COL32_G_SHIFT;
+            out |= ((ImU32)IM_F32_TO_INT8_SAT(color.z)) << IM_COL32_B_SHIFT;
+            out |= v.col & IM_COL32_A_MASK;
+            v.col = out;
+        }
+    }
+}
+
+class InjectAnimation
+{
+    static constexpr const char* text_l_ = "F";
+    static constexpr const char* text_r_ = "ATALITY";
+
+    ImFont* font_;
+    float   size_;
+    bool    finished = false;
+
+    float GetAnimBg(float target = 1, float dur = 0.3f, int policy = iam_policy_crossfade) noexcept
+    {
+        return iam_tween_float(
+            ImGui::GetID(this),
+            ImGui::GetID(1),
+            target,
+            dur,
+            iam_ease_preset(iam_ease_out_cubic),
+            policy,
+            ImGui::GetIO().DeltaTime )
+        ;
+    }
+
+    float GetAnimTextL(float target = 2, float dur = 2, int policy = iam_policy_crossfade) noexcept
+    {
+        return iam_tween_float(
+            ImGui::GetID(this),
+            ImGui::GetID(2),
+            target,
+            dur,
+            iam_ease_preset(iam_ease_linear),
+            policy,
+            ImGui::GetIO().DeltaTime )
+        ;
+    }
+
+    float GetAnimTextR(float target = 2, float dur = 2, int policy = iam_policy_crossfade) noexcept
+    {
+        return iam_tween_float(
+            ImGui::GetID(this),
+            ImGui::GetID(3),
+            target,
+            dur,
+            iam_ease_preset(iam_ease_linear),
+            policy,
+            ImGui::GetIO().DeltaTime )
+        ;
+    }
+public:
+    InjectAnimation(ImFont* font, float size) noexcept
+        : font_(font), size_(size)
+    {}
+
+    void Reset() noexcept
+    {
+        GetAnimBg(0, 0, iam_policy_cut);
+        GetAnimTextL(0, 0, iam_policy_cut);
+        GetAnimTextR(0, 0, iam_policy_cut);
+        finished = false;
+    }
+
+    void Render() noexcept
+    {
+        if (const auto alpha = GetAnimBg(finished? 0 : 1); alpha == 0)
+            return;
+        else ImGui::PushStyleVar(ImGuiStyleVar_Alpha, alpha);
+        ImGui::PushFont(font_, size_);
+
+        const auto f_dl = ImGui::GetForegroundDrawList();
+        const auto display_size = ImGui::GetIO().DisplaySize;
+
+        const auto size_text_l = ImGui::CalcTextSize(text_l_);
+        const auto size_text_r = ImGui::CalcTextSize(text_r_);
+        const auto size_text_full = ImVec2(size_text_l.x + size_text_r.x, size_text_l.y);
+
+        const auto pos_text_full = (display_size - size_text_full) / 2;
+
+        f_dl->AddRectFilled(ImVec2(), display_size, ImGui::GetColorU32(0x88000000));
+
+        int text_vtx_begin = f_dl->VtxBuffer.Size;
+        auto anim_text_l = GetAnimTextL();
+        if (anim_text_l > 0)
+        {
+            auto anim = anim_text_l;
+            ImVec2 pos;
+            ImVec2 offset;
+            float  alpha;
+            if (anim <= 1)
+            {
+                anim = 1 - std::pow(1 - anim, 3.0f);
+                pos = (display_size - size_text_l) / 2;
+                offset = { 0, (1 - anim) * size_text_l.y };
+                alpha = anim;
+            }
+            else
+            {
+                anim -= 1;
+                anim = 1 - std::pow(1 - anim, 3.0f);
+                const float x_stage_1 = (display_size.x - size_text_l.x) / 2;
+                pos = pos_text_full;
+                offset = { (1 - anim) * (x_stage_1 - pos.x), 0 };
+                alpha = 1;
+            }
+            f_dl->AddText(pos + offset, ImGui::GetColorU32(0xFFFFFFFF, alpha), text_l_);
+        }
+        if (anim_text_l >= 1.25)
+        {
+            auto anim_text_r = GetAnimTextR();
+            if (anim_text_r < 1)
+            {
+                anim_text_r = 1 - std::pow(1 - anim_text_r, 3.0f);
+            }
+            else
+            {
+                if (anim_text_r >= 2)
+                    finished = true;
+                anim_text_r = 1;
+            }
+
+            float alpha = ImMin(1.0f, anim_text_r);
+            ImVec2 pos {
+                pos_text_full.x + size_text_l.x,
+                pos_text_full.y
+            };
+            ImVec2 offset { 0, (1 - alpha) * size_text_r.y / 2 };
+
+            f_dl->AddText(pos + offset, ImGui::GetColorU32(0xFFFFFFFF, alpha), text_r_);
+        }
+        int text_vtx_end = f_dl->VtxBuffer.Size;
+
+        VtxColorGradient(
+            f_dl, text_vtx_begin, text_vtx_end,
+            ImDrawVert(pos_text_full - ImVec2(1, 1), {}, 0xFF8080FF),
+            ImDrawVert(pos_text_full, {}, 0xFF8080FF),
+            ImDrawVert(pos_text_full + size_text_full, {}, 0xFF3333CC),
+            ImDrawVert(pos_text_full + size_text_full + ImVec2(1, 1), {}, 0xFF3333CC) )
+        ;
+
+        ImGui::PopFont();
+        ImGui::PopStyleVar();
+    }
+};
+
 void drawFatalWidgets()
 {
     {
@@ -628,9 +831,14 @@ void drawFatalWidgets()
         FatalWidgets::DoubleSlider("Slider123", -2, 2, &doubleVal, ImVec2(80, 16));
         ImGui::Text("Draw Fatality Style ClickGui");
         ImGui::SameLine();
-        FatalWidgets::CheckBox("FatalCheckBox", &boolVal, ImVec2(14, 14));
+        static InjectAnimation inject_anim(Medium12, 153.6);
+        if (FatalWidgets::CheckBox("FatalCheckBox", &boolVal, ImVec2(14, 14)))
+        {
+            inject_anim.Reset();
+        }
         if (boolVal)
         {
+            inject_anim.Render();
             Fatal::Menu::draw();
         }
         if (FatalWidgets::ComboBox("Combo123", "Combo123_Popup", "Hit-chance", ImVec2(80, 22), []() {ImGui::SetNextWindowPos(ImVec2(ImGui::GetItemRectMin().x, ImGui::GetItemRectMax().y + 2));})) {

@@ -21,6 +21,8 @@ target_link_libraries(
 	FatalWidgets
 	PUBLIC
 	ImGui
+	dwmapi
+	d3dcompiler
 )
 target_include_directories(
 	FatalWidgets
